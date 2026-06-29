@@ -21,36 +21,35 @@ async function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** Fetches parsed transactions in small batches with a delay to respect the public RPC's ~100 req/10s limit. */
+/**
+ * Fetches parsed transactions ONE AT A TIME. The free Helius plan forbids batch
+ * JSON-RPC requests (-32403), which is what getParsedTransactions(array) sends,
+ * so we use the singular getParsedTransaction in a paced sequential loop to stay
+ * under the ~10 req/s rate limit, retrying individual calls on rate-limit errors.
+ */
 async function fetchParsedTransactionsBatched(
   connection: Connection,
   signatures: string[],
-  // Helius free tier counts each item in a JSON-RPC batch toward its rate limit
-  // (~10 req/s) and rejects large batches with -32413. Keep batches small and
-  // spaced so we stay under the limit.
-  batchSize = 4,
-  delayMs = 700
+  delayMs = 120
 ): Promise<(ParsedTransactionWithMeta | null)[]> {
   const results: (ParsedTransactionWithMeta | null)[] = [];
-  for (let i = 0; i < signatures.length; i += batchSize) {
-    const batch = signatures.slice(i, i + batchSize);
-
-    // Retry a batch on rate-limit errors (-32413/-32429/429) with backoff.
-    let txs: (ParsedTransactionWithMeta | null)[] | null = null;
-    for (let attempt = 0; attempt < 4 && txs === null; attempt++) {
+  for (let i = 0; i < signatures.length; i++) {
+    let tx: ParsedTransactionWithMeta | null = null;
+    for (let attempt = 0; attempt < 4; attempt++) {
       try {
-        txs = await connection.getParsedTransactions(batch, {
+        tx = await connection.getParsedTransaction(signatures[i], {
           maxSupportedTransactionVersion: 0,
         });
+        break;
       } catch (err) {
         const msg = String(err);
         const rateLimited = /4\d9|413|429|Too many requests|-3241[39]/.test(msg);
         if (!rateLimited || attempt === 3) throw err;
-        await sleep(delayMs * (attempt + 2));
+        await sleep(delayMs * (attempt + 2) * 4);
       }
     }
-    results.push(...(txs ?? batch.map(() => null)));
-    if (i + batchSize < signatures.length) await sleep(delayMs);
+    results.push(tx);
+    if (i + 1 < signatures.length) await sleep(delayMs);
   }
   return results;
 }
