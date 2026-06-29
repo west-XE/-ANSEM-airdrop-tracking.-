@@ -3,7 +3,7 @@ import {
   ParsedTransactionWithMeta,
   PublicKey,
 } from "@solana/web3.js";
-import { ANSEM_MINT, ANSEM_WALLET, SOLANA_RPC_URL } from "./constants";
+import { ANSEM_MINT, ANSEM_WALLET, SOLANA_RPC_URL, TOKEN_DECIMALS } from "./constants";
 
 export function getConnection() {
   return new Connection(SOLANA_RPC_URL, "confirmed");
@@ -66,8 +66,15 @@ export async function getAnsemTransfers(limit = 50): Promise<TransferEvent[]> {
   for (const tx of transactions) {
     if (!tx || !tx.meta) continue;
     const blockTime = tx.blockTime ?? null;
+    const signature = tx.transaction.signatures[0];
 
-    for (const ix of tx.transaction.message.instructions) {
+    // Giveaways are frequently sent through batching tools or alongside swaps,
+    // so the real transfer lands in inner instructions rather than top-level.
+    // Scan both.
+    const topLevel = tx.transaction.message.instructions;
+    const inner = (tx.meta.innerInstructions ?? []).flatMap((i) => i.instructions);
+
+    for (const ix of [...topLevel, ...inner]) {
       if (!("parsed" in ix)) continue;
       const parsed = ix.parsed as
         | { type: string; info?: Record<string, unknown> }
@@ -81,7 +88,7 @@ export async function getAnsemTransfers(limit = 50): Promise<TransferEvent[]> {
         parsed.info.source === ANSEM_WALLET
       ) {
         events.push({
-          signature: tx.transaction.signatures[0],
+          signature,
           timestamp: blockTime,
           type: "SOL",
           amount: Number(parsed.info.lamports ?? 0) / 1e9,
@@ -89,25 +96,25 @@ export async function getAnsemTransfers(limit = 50): Promise<TransferEvent[]> {
         });
       }
 
-      // SPL token transfer of the $ANSEM mint out of Ansem's wallet
+      // SPL token transfer authorized by Ansem's wallet (any token he sends out).
       if (
         ix.program === "spl-token" &&
         (parsed.type === "transfer" || parsed.type === "transferChecked")
       ) {
-        const mint = parsed.info.mint as string | undefined;
         const authority =
           (parsed.info.authority as string | undefined) ??
           (parsed.info.multisigAuthority as string | undefined);
-        if (authority === ANSEM_WALLET && (!mint || mint === ANSEM_MINT)) {
+        if (authority === ANSEM_WALLET) {
           const tokenAmount = parsed.info.tokenAmount as
-            | { uiAmount?: number }
+            | { uiAmount?: number; decimals?: number }
             | undefined;
           const rawAmount = parsed.info.amount as string | undefined;
+          const decimals = tokenAmount?.decimals ?? TOKEN_DECIMALS;
           const amount =
             tokenAmount?.uiAmount ??
-            (rawAmount ? Number(rawAmount) / 1e6 : 0);
+            (rawAmount ? Number(rawAmount) / 10 ** decimals : 0);
           events.push({
-            signature: tx.transaction.signatures[0],
+            signature,
             timestamp: blockTime,
             type: "TOKEN",
             amount,
@@ -118,7 +125,15 @@ export async function getAnsemTransfers(limit = 50): Promise<TransferEvent[]> {
     }
   }
 
+  // A single tx can contain repeated transfers; de-duplicate by sig + to + amount.
+  const seen = new Set<string>();
   return events
+    .filter((e) => {
+      const key = `${e.signature}:${e.type}:${e.to}:${e.amount}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
     .filter((e) => e.amount > 0)
     .sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0))
     .slice(0, limit);
