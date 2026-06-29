@@ -25,8 +25,8 @@ async function sleep(ms: number) {
 async function fetchParsedTransactionsBatched(
   connection: Connection,
   signatures: string[],
-  batchSize = 5,
-  delayMs = 400
+  batchSize = 25,
+  delayMs = 150
 ): Promise<(ParsedTransactionWithMeta | null)[]> {
   const results: (ParsedTransactionWithMeta | null)[] = [];
   for (let i = 0; i < signatures.length; i += batchSize) {
@@ -48,9 +48,11 @@ export async function getAnsemTransfers(limit = 50): Promise<TransferEvent[]> {
   const connection = getConnection();
   const walletPubkey = new PublicKey(ANSEM_WALLET);
 
+  // Scan deeper than the display limit so older giveaways still surface; most of
+  // his recent activity may be incoming/swaps with no outgoing transfers.
   const signatureInfos = await connection.getSignaturesForAddress(
     walletPubkey,
-    { limit: Math.min(limit * 2, 100) }
+    { limit: 250 }
   );
   const signatures = signatureInfos
     .filter((s) => !s.err)
@@ -191,8 +193,13 @@ export async function getTopHolders(): Promise<{
   return { holders, totalSupply };
 }
 
-/** Approximate holder count via the number of token accounts holding the mint (getProgramAccounts on the Token program, filtered by mint). Heavy on public RPC, used sparingly and cached. */
-export async function getApproxHolderCount(): Promise<number> {
+/**
+ * Approximate holder count = number of token accounts holding the mint
+ * (getProgramAccounts on the Token program, filtered by mint). Returns null when
+ * the RPC returns nothing so the UI can show "—" instead of a misleading 0.
+ * Heavy call — cached upstream.
+ */
+export async function getApproxHolderCount(): Promise<number | null> {
   const connection = getConnection();
   const TOKEN_PROGRAM_ID = new PublicKey(
     "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
@@ -206,11 +213,18 @@ export async function getApproxHolderCount(): Promise<number> {
     dataSlice: { offset: 64, length: 8 },
   });
 
-  // Count accounts with non-zero balance (last 8 bytes slice = amount, little-endian u64).
-  let count = 0;
+  if (accounts.length === 0) return null;
+
+  // Count accounts with a non-zero balance (the 8-byte slice = amount, u64 LE).
+  // If the data can't be read as expected, fall back to counting all accounts.
+  let nonZero = 0;
+  let readable = false;
   for (const acc of accounts) {
     const buf = acc.account.data as Buffer;
-    if (buf.length === 8 && buf.readBigUInt64LE(0) > BigInt(0)) count++;
+    if (Buffer.isBuffer(buf) && buf.length >= 8) {
+      readable = true;
+      if (buf.readBigUInt64LE(0) > BigInt(0)) nonZero++;
+    }
   }
-  return count;
+  return readable ? nonZero : accounts.length;
 }
