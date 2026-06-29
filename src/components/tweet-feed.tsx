@@ -1,82 +1,77 @@
 "use client";
 
-import useSWR from "swr";
-import Image from "next/image";
+import { useEffect, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
-import { formatRelativeTime } from "@/lib/utils";
-import { Tweet } from "@/lib/tweets";
 
-const fetcher = (url: string) => fetch(url).then((r) => r.json());
+const SEARCH_QUERY = '$ANSEM OR "ansem coin" OR "black bull" -from:blknoiz06';
+const SEARCH_URL = `https://twitter.com/search?q=${encodeURIComponent(
+  SEARCH_QUERY
+)}&f=live`;
 
+declare global {
+  interface Window {
+    twttr?: { widgets?: { load: (el?: HTMLElement | null) => void } };
+  }
+}
+
+/**
+ * Live X buzz via the official embeddable search timeline (free, no API token).
+ * Loads platform.twitter.com/widgets.js and renders the latest posts matching
+ * the $ANSEM search inside the card.
+ */
 export function TweetFeed() {
-  const { data, error, isLoading, mutate, isValidating } = useSWR<{
-    tweets: Tweet[];
-    configured: boolean;
-  }>("/api/tweets", fetcher, { refreshInterval: 5 * 60_000 });
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const SCRIPT_ID = "twitter-widgets-js";
+
+    function render() {
+      window.twttr?.widgets?.load(containerRef.current);
+    }
+
+    const existing = document.getElementById(SCRIPT_ID);
+    if (existing) {
+      render();
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.id = SCRIPT_ID;
+    script.src = "https://platform.twitter.com/widgets.js";
+    script.async = true;
+    script.onload = render;
+    document.body.appendChild(script);
+  }, []);
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>Top Supporters / X Buzz</CardTitle>
-        <Button variant="secondary" onClick={() => mutate()} disabled={isValidating}>
-          {isValidating ? "Refreshing…" : "Refresh"}
-        </Button>
+        <a
+          href={SEARCH_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-xs font-medium text-neutral-500 hover:text-neutral-900"
+        >
+          Open on X ↗
+        </a>
       </CardHeader>
       <CardContent>
-        {isLoading ? (
-          <div className="space-y-3">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <Skeleton key={i} className="h-20 w-full" />
-            ))}
-          </div>
-        ) : error || !data ? (
-          <p className="text-sm text-neutral-400">Failed to load tweets.</p>
-        ) : !data.configured ? (
-          <p className="text-sm text-neutral-400">
-            X API not configured. Set <code className="font-mono">X_BEARER_TOKEN</code> to enable
-            this section.
-          </p>
-        ) : data.tweets.length === 0 ? (
-          <p className="text-sm text-neutral-400">No recent tweets found.</p>
-        ) : (
-          <div className="grid gap-3 sm:grid-cols-2">
-            {data.tweets.map((tweet) => (
-              <a
-                key={tweet.id}
-                href={tweet.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex flex-col gap-2 rounded-xl border border-neutral-100 p-4 hover:border-neutral-300"
-              >
-                <div className="flex items-center gap-2">
-                  {tweet.authorImage ? (
-                    <Image
-                      src={tweet.authorImage}
-                      alt={tweet.authorUsername}
-                      width={28}
-                      height={28}
-                      className="rounded-full"
-                    />
-                  ) : (
-                    <div className="h-7 w-7 rounded-full bg-neutral-100" />
-                  )}
-                  <div className="text-sm">
-                    <div className="font-medium text-neutral-900">{tweet.authorName}</div>
-                    <div className="text-neutral-400">@{tweet.authorUsername}</div>
-                  </div>
-                </div>
-                <p className="text-sm text-neutral-700">{tweet.text}</p>
-                <div className="flex items-center gap-4 text-xs text-neutral-400">
-                  <span>♥ {tweet.likes}</span>
-                  <span>↻ {tweet.reposts}</span>
-                  <span>{formatRelativeTime(new Date(tweet.createdAt))}</span>
-                </div>
-              </a>
-            ))}
-          </div>
-        )}
+        <div ref={containerRef} className="min-h-[400px]">
+          <a
+            className="twitter-timeline"
+            data-height="600"
+            data-theme="light"
+            data-chrome="noheader nofooter transparent"
+            href={SEARCH_URL}
+          >
+            $ANSEM on X
+          </a>
+        </div>
+        <p className="mt-3 text-xs text-neutral-400">
+          Live posts mentioning $ANSEM, embedded from X. If nothing loads, X may be
+          rate-limiting embeds — use “Open on X” above.
+        </p>
       </CardContent>
     </Card>
   );
