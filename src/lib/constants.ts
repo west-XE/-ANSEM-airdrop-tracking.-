@@ -1,5 +1,8 @@
 export const ANSEM_MINT = "9cRCn9rGT8V2imeM2BaKs13yhMEais3ruM3rPvTGpump";
-export const ANSEM_WALLET = "AVAZvHLR2PcWpDf8BXY4rVxNHYRBytycHkcB5z5QNXYm";
+// Ansem's main wallet — the #1 $ANSEM holder (~58% of supply), which is the
+// source of his giveaways/airdrops. The originally-supplied AVAZ… address holds
+// no tokens and showed no outgoing transfers.
+export const ANSEM_WALLET = "GV6UUmNxz2RpKxmNAPadYKb7uQpszwqQAu3qLJxVdC52";
 
 // Prefer a server-only RPC URL (so a private key isn't shipped to the browser),
 // then a public one, then the fallback below. The public mainnet-beta endpoint
