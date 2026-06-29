@@ -141,6 +141,85 @@ export async function getAnsemTransfers(limit = 50): Promise<TransferEvent[]> {
     .slice(0, limit);
 }
 
+/**
+ * Diagnostic: summarizes what's actually in the tracked wallet's recent history
+ * so we can tell whether it's a personal wallet (transfers) or a pool (swaps),
+ * and whether any outgoing transfers exist at all.
+ */
+export async function getTransfersDebug() {
+  const connection = getConnection();
+  const walletPubkey = new PublicKey(ANSEM_WALLET);
+
+  const signatureInfos = await connection.getSignaturesForAddress(walletPubkey, {
+    limit: 250,
+  });
+  const signatures = signatureInfos.filter((s) => !s.err).map((s) => s.signature);
+  const transactions = await fetchParsedTransactionsBatched(connection, signatures);
+
+  const programCounts: Record<string, number> = {};
+  const parsedTypeCounts: Record<string, number> = {};
+  let parsedTxCount = 0;
+  let sysTransfersFromWallet = 0;
+  let splTransfersByWallet = 0;
+  let ansemBalanceDecreases = 0; // txs where this owner's $ANSEM balance dropped
+  const sampleInstructions: { program: string; type: string; info: unknown }[] = [];
+
+  for (const tx of transactions) {
+    if (!tx || !tx.meta) continue;
+    parsedTxCount++;
+
+    const all = [
+      ...tx.transaction.message.instructions,
+      ...(tx.meta.innerInstructions ?? []).flatMap((i) => i.instructions),
+    ];
+    for (const ix of all) {
+      const program = "program" in ix ? ix.program : (ix as { programId: { toString(): string } }).programId.toString();
+      programCounts[program] = (programCounts[program] ?? 0) + 1;
+      if ("parsed" in ix) {
+        const p = ix.parsed as { type?: string; info?: Record<string, unknown> };
+        if (p?.type) parsedTypeCounts[p.type] = (parsedTypeCounts[p.type] ?? 0) + 1;
+        if (ix.program === "system" && p?.type === "transfer" && p.info?.source === ANSEM_WALLET)
+          sysTransfersFromWallet++;
+        if (
+          ix.program === "spl-token" &&
+          (p?.type === "transfer" || p?.type === "transferChecked") &&
+          (p.info?.authority === ANSEM_WALLET || p.info?.multisigAuthority === ANSEM_WALLET)
+        )
+          splTransfersByWallet++;
+        if (sampleInstructions.length < 8 && (ix.program === "system" || ix.program === "spl-token") && p?.type)
+          sampleInstructions.push({ program: ix.program, type: p.type, info: p.info });
+      }
+    }
+
+    // Did this owner's $ANSEM balance decrease in this tx? (robust outgoing signal)
+    const pre = (tx.meta.preTokenBalances ?? []).find(
+      (b) => b.owner === ANSEM_WALLET && b.mint === ANSEM_MINT
+    );
+    const post = (tx.meta.postTokenBalances ?? []).find(
+      (b) => b.owner === ANSEM_WALLET && b.mint === ANSEM_MINT
+    );
+    if (pre && post) {
+      const before = Number(pre.uiTokenAmount.uiAmount ?? 0);
+      const after = Number(post.uiTokenAmount.uiAmount ?? 0);
+      if (after < before) ansemBalanceDecreases++;
+    }
+  }
+
+  return {
+    wallet: ANSEM_WALLET,
+    signaturesFetched: signatures.length,
+    parsedTxCount,
+    sysTransfersFromWallet,
+    splTransfersByWallet,
+    ansemBalanceDecreases,
+    topPrograms: Object.entries(programCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 12),
+    parsedTypeCounts,
+    sampleInstructions,
+  };
+}
+
 export type HolderEntry = {
   rank: number;
   address: string;
