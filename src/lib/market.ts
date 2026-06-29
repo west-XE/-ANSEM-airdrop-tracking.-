@@ -42,7 +42,10 @@ export async function getMarketData(): Promise<MarketData | null> {
     priceUsd: Number(best.priceUsd ?? 0),
     priceSol: best.priceNative ? Number(best.priceNative) : null,
     change24h: best.priceChange?.h24 ?? null,
-    marketCapUsd: best.marketCap ?? best.fdv ?? null,
+    // Prefer FDV (price x total supply). Dexscreener's marketCap uses a
+    // circulating-supply estimate that undercounts pump.fun-style tokens, so it
+    // reads low vs. the commonly quoted figure.
+    marketCapUsd: best.fdv ?? best.marketCap ?? null,
     liquidityUsd: best.liquidity?.usd ?? null,
     volume24hUsd: best.volume?.h24 ?? null,
     pairUrl: best.url ?? null,
