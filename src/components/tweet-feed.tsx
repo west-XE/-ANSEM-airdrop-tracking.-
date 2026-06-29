@@ -3,10 +3,11 @@
 import { useEffect, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
-const SEARCH_QUERY = '$ANSEM OR "ansem coin" OR "black bull" -from:blknoiz06';
-const SEARCH_URL = `https://twitter.com/search?q=${encodeURIComponent(
-  SEARCH_QUERY
-)}&f=live`;
+// X deprecated embeddable *search* timelines (they render blank), so we embed a
+// profile timeline, which renders reliably. @AnsemCoinSol is the $ANSEM community
+// account. Change this handle to feature a different account.
+const X_HANDLE = "AnsemCoinSol";
+const PROFILE_URL = `https://twitter.com/${X_HANDLE}`;
 
 declare global {
   interface Window {
@@ -48,12 +49,14 @@ export function TweetFeed() {
       <CardHeader>
         <CardTitle>Top Supporters / X Buzz</CardTitle>
         <a
-          href={SEARCH_URL}
+          href={`https://twitter.com/search?q=${encodeURIComponent(
+            '$ANSEM OR "ansem coin" -from:blknoiz06'
+          )}&f=live`}
           target="_blank"
           rel="noopener noreferrer"
           className="text-xs font-medium text-neutral-500 hover:text-neutral-900"
         >
-          Open on X ↗
+          Search $ANSEM on X ↗
         </a>
       </CardHeader>
       <CardContent>
@@ -63,14 +66,14 @@ export function TweetFeed() {
             data-height="600"
             data-theme="light"
             data-chrome="noheader nofooter transparent"
-            href={SEARCH_URL}
+            href={PROFILE_URL}
           >
-            $ANSEM on X
+            Tweets by @{X_HANDLE}
           </a>
         </div>
         <p className="mt-3 text-xs text-neutral-400">
-          Live posts mentioning $ANSEM, embedded from X. If nothing loads, X may be
-          rate-limiting embeds — use “Open on X” above.
+          Live from the @{X_HANDLE} community on X. Use “Search $ANSEM on X” above
+          for the full mentions feed.
         </p>
       </CardContent>
     </Card>
