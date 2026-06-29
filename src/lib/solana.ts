@@ -56,7 +56,7 @@ type EnhancedTx = {
 async function getAnsemTransfersEnhanced(
   apiKey: string,
   limit: number,
-  pages = 3
+  pages = 10
 ): Promise<TransferEvent[]> {
   const events: TransferEvent[] = [];
   let before: string | undefined;
@@ -67,6 +67,9 @@ async function getAnsemTransfersEnhanced(
     );
     url.searchParams.set("api-key", apiKey);
     url.searchParams.set("limit", "100");
+    // Only transfer-type transactions, so each page covers far more giveaways
+    // (skips his swaps/trades) instead of being dominated by trading activity.
+    url.searchParams.set("type", "TRANSFER");
     if (before) url.searchParams.set("before", before);
 
     const res = await fetch(url.toString());
