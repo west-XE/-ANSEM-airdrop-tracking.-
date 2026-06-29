@@ -8,8 +8,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 const TWEET_IDS: string[] = [
   "2071608832728686966", // bubblemaps
   "2071595799583019192", // FabianoSolana
-  "2071593848137023843", // 0xfavvee
-  "2071584285216104629", // 0x_abu
 ];
 
 const SEARCH_URL = `https://twitter.com/search?q=${encodeURIComponent(
@@ -47,10 +45,13 @@ export function TweetFeed() {
         ) : (
           <div
             data-theme="light"
-            className="grid gap-2 md:grid-cols-2 [&_.react-tweet-theme]:my-0"
+            className="grid gap-4 md:grid-cols-2 [&_.react-tweet-theme]:my-0 [&_.react-tweet-theme]:w-full"
           >
             {TWEET_IDS.map((id) => (
-              <div key={id} className="flex justify-center">
+              <div
+                key={id}
+                className="h-[420px] overflow-hidden rounded-2xl border border-neutral-100"
+              >
                 <Tweet id={id} />
               </div>
             ))}
