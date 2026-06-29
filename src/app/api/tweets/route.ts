@@ -1,8 +1,15 @@
 import { NextResponse } from "next/server";
 import { withCache } from "@/lib/cache";
-import { searchAnsemTweets } from "@/lib/tweets";
+import { fetchTimeline, X_HANDLE } from "@/lib/tweets";
+
+export const maxDuration = 30;
 
 export async function GET() {
-  const tweets = await withCache("tweets", 5 * 60_000, searchAnsemTweets);
-  return NextResponse.json({ tweets, configured: Boolean(process.env.X_BEARER_TOKEN) });
+  try {
+    const tweets = await withCache("tweets", 10 * 60_000, () => fetchTimeline());
+    return NextResponse.json({ tweets, handle: X_HANDLE });
+  } catch (error) {
+    console.error("Failed to fetch timeline", error);
+    return NextResponse.json({ tweets: [], handle: X_HANDLE });
+  }
 }

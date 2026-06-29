@@ -10,62 +10,79 @@ export type Tweet = {
   url: string;
 };
 
-type XApiUser = {
-  id: string;
-  username: string;
-  name: string;
-  profile_image_url?: string;
+// The account whose timeline powers the X Buzz feed. @blknoiz06 is Ansem himself
+// (guaranteed active); swap to a community handle if preferred.
+export const X_HANDLE = "blknoiz06";
+
+type SyndicationTweet = {
+  id_str?: string;
+  text?: string;
+  full_text?: string;
+  created_at?: string;
+  favorite_count?: number;
+  retweet_count?: number;
+  user?: {
+    screen_name?: string;
+    name?: string;
+    profile_image_url_https?: string;
+  };
 };
 
-type XApiTweet = {
-  id: string;
-  text: string;
-  author_id: string;
-  created_at: string;
-  public_metrics?: { like_count: number; retweet_count: number };
-};
+/**
+ * Fetches a public profile timeline via X's syndication endpoint (the same one
+ * powering embedded timelines), server-side and without an API key. Reliable and
+ * free, unlike the client widget which tracking-prevention and ad-blockers break.
+ */
+export async function fetchTimeline(handle = X_HANDLE): Promise<Tweet[]> {
+  const url = `https://syndication.twitter.com/srv/timeline-profile/screen-name/${handle}?showReplies=false`;
 
-const QUERY =
-  '("$ANSEM" OR "ansem coin" OR "black bull") -from:blknoiz06 -is:retweet';
-
-/** Searches recent tweets via X API v2. Requires a free-tier bearer token (X_BEARER_TOKEN). */
-export async function searchAnsemTweets(): Promise<Tweet[]> {
-  const bearerToken = process.env.X_BEARER_TOKEN;
-  if (!bearerToken) return [];
-
-  const url = new URL("https://api.twitter.com/2/tweets/search/recent");
-  url.searchParams.set("query", QUERY);
-  url.searchParams.set("max_results", "25");
-  url.searchParams.set("tweet.fields", "created_at,public_metrics,author_id");
-  url.searchParams.set("expansions", "author_id");
-  url.searchParams.set("user.fields", "profile_image_url,name,username");
-
-  const res = await fetch(url.toString(), {
-    headers: { Authorization: `Bearer ${bearerToken}` },
-    next: { revalidate: 300 },
+  const res = await fetch(url, {
+    headers: {
+      // A browser-like UA avoids the endpoint returning an empty shell.
+      "User-Agent":
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+      Accept: "text/html",
+    },
+    next: { revalidate: 600 },
   });
-
   if (!res.ok) return [];
 
-  const data: { data?: XApiTweet[]; includes?: { users?: XApiUser[] } } =
-    await res.json();
-
-  const usersById = new Map(
-    (data.includes?.users ?? []).map((u) => [u.id, u])
+  const html = await res.text();
+  const match = html.match(
+    /<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/
   );
+  if (!match) return [];
 
-  return (data.data ?? []).map((t) => {
-    const user = usersById.get(t.author_id);
-    return {
-      id: t.id,
-      text: t.text,
-      authorUsername: user?.username ?? "unknown",
-      authorName: user?.name ?? "Unknown",
-      authorImage: user?.profile_image_url ?? null,
-      likes: t.public_metrics?.like_count ?? 0,
-      reposts: t.public_metrics?.retweet_count ?? 0,
-      createdAt: t.created_at,
-      url: `https://x.com/${user?.username ?? "i"}/status/${t.id}`,
-    };
-  });
+  let data: unknown;
+  try {
+    data = JSON.parse(match[1]);
+  } catch {
+    return [];
+  }
+
+  // Walk to the timeline entries defensively across possible shapes.
+  const entries =
+    (data as {
+      props?: { pageProps?: { timeline?: { entries?: unknown[] } } };
+    })?.props?.pageProps?.timeline?.entries ?? [];
+
+  const tweets: Tweet[] = [];
+  for (const entry of entries) {
+    const t = (entry as { content?: { tweet?: SyndicationTweet } })?.content
+      ?.tweet;
+    if (!t?.id_str) continue;
+    const username = t.user?.screen_name ?? handle;
+    tweets.push({
+      id: t.id_str,
+      text: t.full_text ?? t.text ?? "",
+      authorUsername: username,
+      authorName: t.user?.name ?? username,
+      authorImage: t.user?.profile_image_url_https ?? null,
+      likes: t.favorite_count ?? 0,
+      reposts: t.retweet_count ?? 0,
+      createdAt: t.created_at ?? "",
+      url: `https://x.com/${username}/status/${t.id_str}`,
+    });
+  }
+  return tweets;
 }
