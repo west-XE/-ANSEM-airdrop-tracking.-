@@ -86,17 +86,8 @@ async function getAnsemTransfersEnhanced(
           });
         }
       }
-      for (const n of tx.nativeTransfers ?? []) {
-        if (n.fromUserAccount === ANSEM_WALLET) {
-          events.push({
-            signature: tx.signature,
-            timestamp: tx.timestamp ?? null,
-            type: "SOL",
-            amount: n.amount / 1e9,
-            to: n.toUserAccount,
-          });
-        }
-      }
+      // Only $ANSEM giveaways are shown — native SOL transfers are intentionally
+      // ignored.
     }
 
     before = txs[txs.length - 1]?.signature;
@@ -198,22 +189,7 @@ export async function getAnsemTransfers(limit = 50): Promise<TransferEvent[]> {
         | undefined;
       if (!parsed?.info) continue;
 
-      // Native SOL transfer out of Ansem's wallet
-      if (
-        ix.program === "system" &&
-        parsed.type === "transfer" &&
-        parsed.info.source === ANSEM_WALLET
-      ) {
-        events.push({
-          signature,
-          timestamp: blockTime,
-          type: "SOL",
-          amount: Number(parsed.info.lamports ?? 0) / 1e9,
-          to: String(parsed.info.destination),
-        });
-      }
-
-      // SPL token transfer authorized by Ansem's wallet (any token he sends out).
+      // Only $ANSEM token giveaways are tracked; SOL transfers are ignored.
       if (
         ix.program === "spl-token" &&
         (parsed.type === "transfer" || parsed.type === "transferChecked")
