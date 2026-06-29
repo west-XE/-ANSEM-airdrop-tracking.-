@@ -1,15 +1,19 @@
 import { NextResponse } from "next/server";
 import { withCache } from "@/lib/cache";
-import { fetchTimeline, X_HANDLE } from "@/lib/tweets";
+import { fetchTimeline, fetchTimelineDebug, X_HANDLE } from "@/lib/tweets";
 
 export const maxDuration = 30;
 
-export async function GET() {
+export async function GET(request: Request) {
+  const debug = new URL(request.url).searchParams.get("debug");
   try {
+    if (debug) {
+      return NextResponse.json(await fetchTimelineDebug());
+    }
     const tweets = await withCache("tweets", 10 * 60_000, () => fetchTimeline());
     return NextResponse.json({ tweets, handle: X_HANDLE });
   } catch (error) {
     console.error("Failed to fetch timeline", error);
-    return NextResponse.json({ tweets: [], handle: X_HANDLE });
+    return NextResponse.json({ tweets: [], handle: X_HANDLE, error: String(error) });
   }
 }

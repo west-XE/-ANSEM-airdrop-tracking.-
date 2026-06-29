@@ -66,6 +66,56 @@ export async function fetchTimeline(handle = X_HANDLE): Promise<Tweet[]> {
       props?: { pageProps?: { timeline?: { entries?: unknown[] } } };
     })?.props?.pageProps?.timeline?.entries ?? [];
 
+  return parseEntries(entries, handle);
+}
+
+/** Diagnostic: shows what the syndication endpoint returns so the parser can be fixed. */
+export async function fetchTimelineDebug(handle = X_HANDLE) {
+  const url = `https://syndication.twitter.com/srv/timeline-profile/screen-name/${handle}?showReplies=false`;
+  const res = await fetch(url, {
+    headers: {
+      "User-Agent":
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+      Accept: "text/html",
+    },
+    cache: "no-store",
+  });
+  const html = await res.text();
+  const hasNextData = /id="__NEXT_DATA__"/.test(html);
+  const match = html.match(
+    /<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/
+  );
+  let topLevelKeys: string[] = [];
+  let pagePropsKeys: string[] = [];
+  let entriesCount = -1;
+  if (match) {
+    try {
+      const data = JSON.parse(match[1]) as Record<string, unknown>;
+      topLevelKeys = Object.keys(data);
+      const pp = (data as { props?: { pageProps?: Record<string, unknown> } })
+        ?.props?.pageProps;
+      if (pp) pagePropsKeys = Object.keys(pp);
+      const entries = (pp as { timeline?: { entries?: unknown[] } })?.timeline
+        ?.entries;
+      if (Array.isArray(entries)) entriesCount = entries.length;
+    } catch {
+      topLevelKeys = ["<json parse failed>"];
+    }
+  }
+  return {
+    handle,
+    status: res.status,
+    ok: res.ok,
+    htmlLength: html.length,
+    hasNextData,
+    topLevelKeys,
+    pagePropsKeys,
+    entriesCount,
+    htmlSnippet: html.slice(0, 600),
+  };
+}
+
+function parseEntries(entries: unknown[], handle: string): Tweet[] {
   const tweets: Tweet[] = [];
   for (const entry of entries) {
     const t = (entry as { content?: { tweet?: SyndicationTweet } })?.content
