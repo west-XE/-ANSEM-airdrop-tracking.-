@@ -5,7 +5,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 // hosted servers (429), but the single-tweet syndication API that react-tweet uses
 // stays reliable. Paste tweet IDs here — the number at the end of a post's URL
 // (e.g. x.com/<user>/status/<ID>).
-const TWEET_IDS: string[] = [];
+const TWEET_IDS: string[] = [
+  "2071608832728686966", // bubblemaps
+  "2071595799583019192", // FabianoSolana
+  "2071593848137023843", // 0xfavvee
+  "2071584285216104629", // 0x_abu
+];
 
 const SEARCH_URL = `https://twitter.com/search?q=${encodeURIComponent(
   '$ANSEM OR "ansem coin" -from:blknoiz06'
