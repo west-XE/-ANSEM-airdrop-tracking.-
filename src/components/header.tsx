@@ -43,12 +43,6 @@ export function Header() {
     fetcher,
     { refreshInterval: 30_000 }
   );
-  const { data: holdersData } = useSWR<{ holderCount: number }>(
-    "/api/holders",
-    fetcher,
-    { refreshInterval: 120_000 }
-  );
-  const holderCount = holdersData?.holderCount;
 
   return (
     <header className="border-b border-neutral-200 bg-white/80 backdrop-blur-sm sticky top-0 z-10">
@@ -91,10 +85,6 @@ export function Header() {
             <StatBlock
               label="Market Cap"
               value={data.marketCapUsd ? `$${formatCompact(data.marketCapUsd)}` : "—"}
-            />
-            <StatBlock
-              label="Holders"
-              value={holderCount !== undefined ? formatCompact(holderCount) : "—"}
             />
           </div>
         ) : null}
