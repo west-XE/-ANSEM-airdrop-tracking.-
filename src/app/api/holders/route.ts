@@ -1,26 +1,19 @@
 import { NextResponse } from "next/server";
 import { withCache } from "@/lib/cache";
-import { getApproxHolderCount, getTopHolders } from "@/lib/solana";
+import { getTopHolders } from "@/lib/solana";
 
 export async function GET() {
-  // The approximate holder count uses getProgramAccounts, which many RPCs
-  // (including the public endpoint) disable or rate-limit. Keep it independent
-  // so a failure there never blocks the top-holders table.
-  const holderCountResult = withCache("holder-count", 300_000, getApproxHolderCount)
-    .then((count) => count as number | null)
-    .catch((error) => {
-      console.error("Failed to fetch holder count", error);
-      return null;
-    });
-
+  // Note: an exact holder count requires scanning every token account
+  // (getProgramAccounts), which is huge and disabled/too slow on the free tier,
+  // so it's intentionally omitted here to keep this endpoint fast. The UI shows
+  // "—" for the total. Top holders come from getTokenLargestAccounts (fast).
   try {
     const { holders, totalSupply } = await withCache(
       "top-holders",
       120_000,
       getTopHolders
     );
-    const holderCount = await holderCountResult;
-    return NextResponse.json({ holders, totalSupply, holderCount });
+    return NextResponse.json({ holders, totalSupply, holderCount: null });
   } catch (error) {
     console.error("Failed to fetch holders", error);
     return NextResponse.json(

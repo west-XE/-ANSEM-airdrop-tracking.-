@@ -56,7 +56,7 @@ type EnhancedTx = {
 async function getAnsemTransfersEnhanced(
   apiKey: string,
   limit: number,
-  pages = 5
+  pages = 3
 ): Promise<TransferEvent[]> {
   const events: TransferEvent[] = [];
   let before: string | undefined;
