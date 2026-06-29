@@ -25,16 +25,31 @@ async function sleep(ms: number) {
 async function fetchParsedTransactionsBatched(
   connection: Connection,
   signatures: string[],
-  batchSize = 25,
-  delayMs = 150
+  // Helius free tier counts each item in a JSON-RPC batch toward its rate limit
+  // (~10 req/s) and rejects large batches with -32413. Keep batches small and
+  // spaced so we stay under the limit.
+  batchSize = 4,
+  delayMs = 700
 ): Promise<(ParsedTransactionWithMeta | null)[]> {
   const results: (ParsedTransactionWithMeta | null)[] = [];
   for (let i = 0; i < signatures.length; i += batchSize) {
     const batch = signatures.slice(i, i + batchSize);
-    const txs = await connection.getParsedTransactions(batch, {
-      maxSupportedTransactionVersion: 0,
-    });
-    results.push(...txs);
+
+    // Retry a batch on rate-limit errors (-32413/-32429/429) with backoff.
+    let txs: (ParsedTransactionWithMeta | null)[] | null = null;
+    for (let attempt = 0; attempt < 4 && txs === null; attempt++) {
+      try {
+        txs = await connection.getParsedTransactions(batch, {
+          maxSupportedTransactionVersion: 0,
+        });
+      } catch (err) {
+        const msg = String(err);
+        const rateLimited = /4\d9|413|429|Too many requests|-3241[39]/.test(msg);
+        if (!rateLimited || attempt === 3) throw err;
+        await sleep(delayMs * (attempt + 2));
+      }
+    }
+    results.push(...(txs ?? batch.map(() => null)));
     if (i + batchSize < signatures.length) await sleep(delayMs);
   }
   return results;
@@ -48,11 +63,11 @@ export async function getAnsemTransfers(limit = 50): Promise<TransferEvent[]> {
   const connection = getConnection();
   const walletPubkey = new PublicKey(ANSEM_WALLET);
 
-  // Scan deeper than the display limit so older giveaways still surface; most of
-  // his recent activity may be incoming/swaps with no outgoing transfers.
+  // Scan deeper than the display limit so older giveaways still surface, but keep
+  // it modest to stay within the free RPC's rate limit while parsing each tx.
   const signatureInfos = await connection.getSignaturesForAddress(
     walletPubkey,
-    { limit: 250 }
+    { limit: 120 }
   );
   const signatures = signatureInfos
     .filter((s) => !s.err)
@@ -151,7 +166,7 @@ export async function getTransfersDebug() {
   const walletPubkey = new PublicKey(ANSEM_WALLET);
 
   const signatureInfos = await connection.getSignaturesForAddress(walletPubkey, {
-    limit: 250,
+    limit: 120,
   });
   const signatures = signatureInfos.filter((s) => !s.err).map((s) => s.signature);
   const transactions = await fetchParsedTransactionsBatched(connection, signatures);
