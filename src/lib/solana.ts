@@ -21,6 +21,101 @@ async function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** Extract the Helius API key from the configured RPC URL, if present. */
+function getHeliusApiKey(): string | null {
+  try {
+    const url = new URL(SOLANA_RPC_URL);
+    if (!url.hostname.includes("helius")) return null;
+    return url.searchParams.get("api-key");
+  } catch {
+    return null;
+  }
+}
+
+type EnhancedTx = {
+  signature: string;
+  timestamp: number;
+  nativeTransfers?: {
+    fromUserAccount: string;
+    toUserAccount: string;
+    amount: number; // lamports
+  }[];
+  tokenTransfers?: {
+    fromUserAccount: string;
+    toUserAccount: string;
+    mint: string;
+    tokenAmount: number; // ui amount
+  }[];
+};
+
+/**
+ * Fetches Ansem's outgoing transfers via the free Helius Enhanced Transactions
+ * API — one fast (non-batch) call per 100 transactions, already parsed. This
+ * lets us scan far more history than fetching transactions individually.
+ */
+async function getAnsemTransfersEnhanced(
+  apiKey: string,
+  limit: number,
+  pages = 5
+): Promise<TransferEvent[]> {
+  const events: TransferEvent[] = [];
+  let before: string | undefined;
+
+  for (let page = 0; page < pages; page++) {
+    const url = new URL(
+      `https://api.helius.xyz/v0/addresses/${ANSEM_WALLET}/transactions`
+    );
+    url.searchParams.set("api-key", apiKey);
+    url.searchParams.set("limit", "100");
+    if (before) url.searchParams.set("before", before);
+
+    const res = await fetch(url.toString());
+    if (!res.ok) break;
+    const txs: EnhancedTx[] = await res.json();
+    if (!Array.isArray(txs) || txs.length === 0) break;
+
+    for (const tx of txs) {
+      for (const t of tx.tokenTransfers ?? []) {
+        if (t.fromUserAccount === ANSEM_WALLET && t.mint === ANSEM_MINT) {
+          events.push({
+            signature: tx.signature,
+            timestamp: tx.timestamp ?? null,
+            type: "TOKEN",
+            amount: t.tokenAmount,
+            to: t.toUserAccount,
+          });
+        }
+      }
+      for (const n of tx.nativeTransfers ?? []) {
+        if (n.fromUserAccount === ANSEM_WALLET) {
+          events.push({
+            signature: tx.signature,
+            timestamp: tx.timestamp ?? null,
+            type: "SOL",
+            amount: n.amount / 1e9,
+            to: n.toUserAccount,
+          });
+        }
+      }
+    }
+
+    before = txs[txs.length - 1]?.signature;
+    if (!before) break;
+  }
+
+  const seen = new Set<string>();
+  return events
+    .filter((e) => {
+      const key = `${e.signature}:${e.type}:${e.to}:${e.amount}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .filter((e) => e.amount > 0)
+    .sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0))
+    .slice(0, limit);
+}
+
 /**
  * Fetches parsed transactions ONE AT A TIME. The free Helius plan forbids batch
  * JSON-RPC requests (-32403), which is what getParsedTransactions(array) sends,
@@ -59,11 +154,17 @@ async function fetchParsedTransactionsBatched(
  * his recent transaction history via getSignaturesForAddress + getParsedTransactions.
  */
 export async function getAnsemTransfers(limit = 50): Promise<TransferEvent[]> {
+  // Prefer the fast Helius Enhanced Transactions API when available — it returns
+  // pre-parsed transfers 100 at a time, so we can scan far more history quickly.
+  const heliusKey = getHeliusApiKey();
+  if (heliusKey) {
+    return getAnsemTransfersEnhanced(heliusKey, limit);
+  }
+
+  // Fallback: parse raw transactions via standard RPC (slower, less history).
   const connection = getConnection();
   const walletPubkey = new PublicKey(ANSEM_WALLET);
 
-  // Scan deeper than the display limit so older giveaways still surface, but keep
-  // it modest to stay within the free RPC's rate limit while parsing each tx.
   const signatureInfos = await connection.getSignaturesForAddress(
     walletPubkey,
     { limit: 120 }
