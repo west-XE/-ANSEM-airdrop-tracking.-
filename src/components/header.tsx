@@ -53,16 +53,11 @@ export function Header() {
   return (
     <header className="border-b border-neutral-200 bg-white/80 backdrop-blur-sm sticky top-0 z-10">
       <div className="mx-auto flex max-w-6xl flex-col gap-4 px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-neutral-900 font-mono text-sm font-bold text-white">
-            $A
-          </div>
-          <div>
-            <h1 className="text-lg font-semibold tracking-tight text-neutral-900">
-              $ANSEM Dashboard
-            </h1>
-            <p className="text-xs text-neutral-400">Live on Solana</p>
-          </div>
+        <div>
+          <h1 className="text-lg font-semibold tracking-tight text-neutral-900">
+            $ANSEM Dashboard
+          </h1>
+          <p className="text-xs text-neutral-400">Live on Solana</p>
         </div>
 
         {isLoading && (
