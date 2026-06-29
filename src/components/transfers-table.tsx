@@ -48,7 +48,7 @@ export function TransfersTable() {
           className="w-56"
         />
       </CardHeader>
-      <CardContent className="overflow-x-auto p-0">
+      <CardContent className="max-h-[480px] overflow-y-auto overflow-x-auto p-0">
         {isLoading ? (
           <div className="space-y-2 p-5">
             {Array.from({ length: 6 }).map((_, i) => (
@@ -61,7 +61,7 @@ export function TransfersTable() {
           <p className="p-5 text-sm text-neutral-400">No transfers found.</p>
         ) : (
           <table className="w-full text-left text-sm">
-            <thead>
+            <thead className="sticky top-0 z-10 bg-white">
               <tr className="border-b border-neutral-100 text-xs uppercase tracking-wide text-neutral-400">
                 <th className="px-5 py-3 font-medium">Timestamp</th>
                 <th className="px-5 py-3 font-medium">Type</th>
